@@ -1,0 +1,15 @@
+
+
+
+function taxonomy_redirect_custom_term_path($term, $path) {
+  if ($term is of the 'Country' vocabulary) {
+    if (browsing the 'articles' view) {
+      return "yz/$term->tid";
+    }
+    else if (browsing the 'jobs' view) {
+      return "dd/$term->tid";
+    }
+  }
+  // hand control back to the 'taxonomy_redirect' module:
+  return taxonomy_redirect_default_term_path($term, $path);
+}

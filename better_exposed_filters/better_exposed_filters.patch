@@ -1,0 +1,434 @@
+? .svn
+? 657148-exposed-sort.patch
+? LICENSE.txt
+? better_exposed_filters.patch
+? tests/.svn
+? translations/.svn
+Index: better_exposed_filters.js
+===================================================================
+RCS file: /cvs/drupal-contrib/contributions/modules/better_exposed_filters/better_exposed_filters.js,v
+retrieving revision 1.9
+diff -u -p -r1.9 better_exposed_filters.js
+--- better_exposed_filters.js	7 Jun 2010 22:56:05 -0000	1.9
++++ better_exposed_filters.js	26 Aug 2010 15:22:12 -0000
+@@ -60,5 +60,19 @@ if (Drupal.jsEnabled) {
+         }
+       });
+     }
++    
++    /*
++     * Add support for Do Not Sort option for exposed sorts (Views 3.x only)
++     */
++    $('.views-exposed-form').parents('form:first').submit(function() {
++      if ($('.bef-sortorder input[value=0]:checked', this).length) {
++        // Uncheck/select the sort_by and sort_order elements
++        $('.bef-sortorder input', this).attr('checked', '');
++        $('.bef-sortby input', this).attr('checked', '');
++        $('.bef-sortby select', this).remove();
++      }
++      // Allow normal form processing to continue from here
++    });
++      
+   };
+ }
+Index: better_exposed_filters.module
+===================================================================
+RCS file: /cvs/drupal-contrib/contributions/modules/better_exposed_filters/better_exposed_filters.module,v
+retrieving revision 1.14
+diff -u -p -r1.14 better_exposed_filters.module
+--- better_exposed_filters.module	14 Aug 2010 19:21:56 -0000	1.14
++++ better_exposed_filters.module	26 Aug 2010 15:22:12 -0000
+@@ -186,6 +186,12 @@ function better_exposed_filters_theme($e
+   return array(
+     'select_as_checkboxes' => array('function' => 'theme_select_as_checkboxes'),
+     'select_as_hidden'     => array('function' => 'theme_select_as_hidden'),
++    'select_as_links'      => array('function' => 'theme_select_as_links'),
++/*
++      'function' => 'theme_select_as_links',
++      'arguments' => array('sort_order' => NULL),
++    ),
++*/
+   );
+ }
+ 
+@@ -274,6 +280,75 @@ function theme_select_as_checkboxes($ele
+ }
+ 
+ /**
++ * Themes a select element as a series of links
++ *
++ * @see theme_select(), http://api.drupal.org/api/function/theme_select/6
++ * @param object $element - An associative array containing the properties of the element.
++ *                          Properties used: title, value, options, description, extra, multiple, required
++ * @return HTML string representing the form element.
++ */
++function theme_select_as_links($element) {
++  $output = '';
++  $selected_options = (array)$element['#post'][$element['#name']];   // the selected keys from #options
++  $properties = array(
++    'title' => $element['#title'],
++    'description' => $element['#description'],
++    'required' => FALSE,
++  );
++
++  foreach ($element['#options'] as $option => $elem) {
++    // Check for Taxonomy-based filters
++    if (is_object($elem)) {
++      list($option, $elem) = each(array_slice($elem->option, 0, 1, TRUE));
++    }
++
++    /*
++     * Check for optgroups.  Put subelements in the $element_set array and add a group heading.
++     * Otherwise, just add the element to the set
++     */
++    $element_set = array();
++    if (is_array($elem)) {
++      $element_set = $elem;
++    }
++    else {
++      $element_set[$option] = $elem;
++    }
++
++    $links = array();
++    foreach ($element_set as $key => $value) {
++
++      // Custom ID for each hidden field based on the <select>'s original ID
++      $id = form_clean_id($element['#id'] . '-' . $key);
++      if (array_search($key, $selected_options) === FALSE) {
++
++        $link = better_exposed_filters_replace_uri_value('sort_by', $key, $value);
++
++        // Very similar to theme_hidden (http://api.drupal.org/api/function/theme_hidden/6)
++        $output .= theme('form_element', array_merge($properties, array('#id' => $id)), $link);
++      } else {
++        if (!$sort_order = better_exposed_filters_get_uri_value('sort_order')) {
++          $sort_order = $element['#sort_order']['#default_value'];
++        }
++        switch ($sort_order) {
++          case 'ASC':
++            $sort_order = 'DESC';
++          break;
++          case 'DESC':
++            $sort_order = 'ASC';
++          break;
++          default:
++            $sort_order = 'ASC';
++
++        }
++        $link = better_exposed_filters_replace_uri_value('sort_order', $sort_order, $value);
++        $output .= theme('form_element', array_merge($properties, array('#id' => $id)), $link);
++      }
++    }
++  }
++  return $output;
++}
++
++/**
+  * Themes a select element as a series of hidden fields
+  *
+  * @see theme_select(), http://api.drupal.org/api/function/theme_select/6
+@@ -346,3 +421,72 @@ function better_exposed_filters_views_ap
+   );
+ }
+ 
++/**
++ * Replace URI value of selected argument
++ *
++ * @param string $arg name of the argument in URI
++ * @param string $value value of the argument in URI
++ * @return array
++ *    Return base URL, URL-encoded query string
++ */
++function better_exposed_filters_replace_uri_value($arg, $arg_value, $name = NULL, $link = TRUE) {
++  $urllist = parse_url(request_uri());
++  if (strpos($urllist['query'], $arg . '=') !== FALSE) {
++    $keyvalue_list = explode("&",($urllist["query"])); // Explode into key/value array
++    $keyvalue_result = array(); // Store resulting key/value pairs
++    foreach($keyvalue_list as $key => $value) {
++      $keyvalue=explode("=", $value); // Explode each individual key/value into an array
++    
++      if(count($keyvalue) == 2) { // Make sure we have a "key=value" array
++        $keyvalue[1]=urlencode($keyvalue[1]); // Encode the value portion
++
++        if ($keyvalue[0] == $arg) {
++          $keyvalue[1] = $arg_value; // change value of our argument
++        }
++        $keyvalue_result[$keyvalue[0]] = $keyvalue[1]; // Add our key and encoded value into the result
++      } // end: if
++    } // end: foreach
++    // $urllist["query"] = implode("&", $keyvalue_result); // Repopulate our query key with encoded results
++    $urllist["query"] = $keyvalue_result; // assign array of query key/value-pairs without any URL-encoding
++  } else {
++    $urllist['query'] .= !empty($urllist['query']) ? '&' : '';
++    $urllist['query'] .= $arg . '=' . $arg_value;
++  }     
++    $url=(isset($urllist["scheme"])?$urllist["scheme"]."://":"").
++         (isset($urllist["user"])?$urllist["user"].":":"").
++         (isset($urllist["pass"])?$urllist["pass"]."@":"").
++         (isset($urllist["host"])?$urllist["host"]:"").
++         (isset($urllist["port"])?":".$urllist["port"]:"").
++         (isset($urllist["path"])?$urllist["path"]:"").
++         (isset($urllist["query"])?"?".$urllist["query"]:"").
++         (isset($urllist["fragment"])?"#".$urllist["fragment"]:"");
++  return $link ? l($name ? $name : $arg_value, substr($urllist["path"], 1), $urllist) : url($urllist["path"], $urllist);
++}
++
++/**
++ * Get URI value of selected argument
++ *
++ * @param string $arg name of the argument in URI
++ * @return string
++ *    Return value of the argument
++ */
++function better_exposed_filters_get_uri_value($arg) {
++  $res = NULL;
++  $urllist = parse_url(request_uri());
++  if (strpos($urllist['query'], $arg . '=') !== FALSE) {
++    $keyvalue_list = explode("&",($urllist["query"])); // Explode into key/value array
++    foreach($keyvalue_list as $key => $value) {
++      $keyvalue=explode("=", $value); // Explode each individual key/value into an array
++    
++      if(count($keyvalue) == 2) { // Make sure we have a "key=value" array
++
++        if ($keyvalue[0] == $arg) {
++          $res = $keyvalue[1];
++          break;
++        }
++      } // end: if
++    } // end: foreach
++  }
++  return $res;
++}
++
+Index: better_exposed_filters_exposed_form_plugin.inc
+===================================================================
+RCS file: /cvs/drupal-contrib/contributions/modules/better_exposed_filters/better_exposed_filters_exposed_form_plugin.inc,v
+retrieving revision 1.11
+diff -u -p -r1.11 better_exposed_filters_exposed_form_plugin.inc
+--- better_exposed_filters_exposed_form_plugin.inc	25 May 2010 17:36:47 -0000	1.11
++++ better_exposed_filters_exposed_form_plugin.inc	26 Aug 2010 15:22:13 -0000
+@@ -23,12 +23,48 @@ class better_exposed_filters_exposed_for
+   function options_form(&$form, &$form_state) {
+     parent::options_form($form, $form_state);
+ 
++    $bef_options = array();
++
+     /*
+-     * Changes to the options form need to be mirrored in hook_form_alter in 
+-     * better_exposed_filters.module to maintain Views 2.x support 
++     * Add options for exposed sorts
++     */
++    $exposed = FALSE;
++    foreach ($this->display->handler->get_handlers('sort') as $label => $sort) {
++      if ($sort->options['exposed']) {
++        $exposed = TRUE;
++        break;
++      }
++    }
++    if ($exposed) {
++      $bef_options['sort']['bef_format'] = array(
++        '#type' => 'select',
++        '#title' => t('Display exposed sort options as'),
++        '#default_value' => $this->options['bef']['sort']['bef_format'],
++        '#options' => array(
++          'default' => t('Default select list'),
++          'bef' => t('Radio Buttons'),
++          'bef_links' => t('Links'),
++        ),
++        '#description' => t('Select a format for the exposed sort options.'),
++      );
++      $bef_options['sort']['allow_no_sort'] = array(
++        '#type' => 'checkbox',
++        '#title' => t('Display a "Do not sort" option'),
++        '#default_value' => $this->options['bef']['sort']['allow_no_sort'],
++        '#description' => t('Adds a "do not sort" option to the existing Asc/Desc options'),
++      );
++      $bef_options['sort']['no_sort_label'] = array(
++        '#type' => 'textfield',
++        '#title' => t('"Do not sort" label'),
++        '#default_value' => $this->options['bef']['sort']['no_sort_label'],
++        '#description' => t('Text to use if the above option is checked'),
++      );
++    }
++
++    /*
++     * Changes to the options form need to be mirrored in hook_form_alter in
++     * better_exposed_filters.module to maintain Views 2.x support
+      */
+-    
+-    $bef_options = array();
+ 
+     // Go through each filter and add the same options we used to add in hook_form_alter()
+     foreach ($this->display->handler->get_handlers('filter') as $label => $filter) {
+@@ -53,10 +89,10 @@ class better_exposed_filters_exposed_for
+           'bef_hidden' => t('Hidden'),
+         ),
+         '#description' => t(
+-          'Select a format for the exposed filter.  The "Hidden" option is 
+-            generally used for multi-step filters.  Note: if "Force single" 
+-            is checked, radio buttons will be used.  If "Force single" is 
+-            unchecked, checkboxes will be used.' 
++          'Select a format for the exposed filter.  The "Hidden" option is
++            generally used for multi-step filters.  Note: if "Force single"
++            is checked, radio buttons will be used.  If "Force single" is
++            unchecked, checkboxes will be used.'
+         ),
+       );
+ 
+@@ -75,7 +111,7 @@ class better_exposed_filters_exposed_for
+         '#default_value' => $this->options['bef'][$label]['more_options']['bef_select_all_none'],
+         '#disabled' => $filter->options['expose']['single'],
+         '#description' => t(
+-          'Add a "Select All/None" link when rendering the exposed filter using 
++          'Add a "Select All/None" link when rendering the exposed filter using
+             checkboxes. If this option is disabled, edit the filter and uncheck
+             "Force single". NOTE: The link is built at page load, so it will not appear
+             in the "Live Preview" which is loaded dynamically.'
+@@ -87,7 +123,7 @@ class better_exposed_filters_exposed_for
+         '#type' => 'textarea',
+         '#title' => t('Description'),
+         '#default_value' => $this->options['bef'][$label]['more_options']['bef_filter_description'],
+-        '#description' => t('Adds descriptive text to the exposed filter.  This is usually 
++        '#description' => t('Adds descriptive text to the exposed filter.  This is usually
+                               rendered in smaller print under the label or the options.'),
+       );
+     }             // foreach ($filters as $filter) {
+@@ -101,15 +137,66 @@ class better_exposed_filters_exposed_for
+    */
+   function exposed_form_alter(&$form, &$form_state) {
+     parent::exposed_form_alter($form, $form_state);
+-    
++
++    /*
++     * Handle exposed sort elements
++     */
++    if (isset($this->options['bef']['sort'])) {
++      // Add "Do not sort" option if selected
++      if ($this->options['bef']['sort']['allow_no_sort']) {
++        array_unshift($form['sort_order']['#options'], $this->options['bef']['sort']['no_sort_label']);
++
++        // JavaScript support is needed to remove the sort_by and sort_order form elements on form submission
++        drupal_add_js(drupal_get_path('module', 'better_exposed_filters') .'/better_exposed_filters.js');
++      }
++      switch($this->options['bef']['sort']['bef_format']) {
++        case 'bef':
++          if (1 == count($form['sort_by']['#options'])) {
++            // Don't show radio buttons when there's just one option.
++            // NOTE: Views' exposed forms code does some manipulations after form_alter is called, so we can't
++            //       add the markup and hidden form items as proper FAPI elements as they won't get positioned
++            //       correctly. Thus we 'display: none' the select element and add the display text using #suffix.
++            // TODO: should this be theme-able?  Should we move all select-as-radios to theme functions?
++    //        if (empty($form['sort_by']['#suffix'])) {
++    //          $form['sort_by']['#suffix'] = '';
++    //        }
++    //        if (empty($form['sort_by']['#prefix'])) {
++    //          $form['sort_by']['#prefix'] = '';
++    //        }
++            $form['sort_by']['#prefix'] .= '<div class="bef-sortby bef-single-sortby-option">';
++            $form['sort_by']['#suffix'] .= array_pop(array_values($form['sort_by']['#options'])) .'</div>';
++            $form['sort_by']['#attributes'] = array('style' => 'display: none;');
++          }
++          else {
++            $form['sort_by']['#type'] = 'radios';
++            $form['sort_by']['#process'] = array('expand_radios', 'views_process_dependency');
++            $form['sort_by']['#prefix'] = '<div class="bef-sortby bef-select-as-radios">';
++            $form['sort_by']['#suffix'] = '</div>';
++          }
++
++          $form['sort_order']['#type'] = 'radios';
++          $form['sort_order']['#process'] = array('expand_radios', 'views_process_dependency');
++          $form['sort_order']['#prefix'] = '<div class="bef-sortorder bef-select-as-radios">';
++          $form['sort_order']['#suffix'] = '</div>';
++        break;
++        case 'bef_links':
++          if (count($form['sort_by']['#options']) > 1) {
++            $form['sort_by']['#theme'] = 'select_as_links';
++            $form['sort_by']['#sort_order'] = $form['sort_order'];
++            $form['sort_order']['#attributes'] = array('style' => 'display: none;');
++          }
++        break;
++      }
++    }
++
+     /*
+-     * Changes to the display of BEF filters need to be mirrored in hook_form_alter in 
+-     * better_exposed_filters.module to maintain Views 2.x support 
++     * Changes to the display of BEF filters need to be mirrored in hook_form_alter in
++     * better_exposed_filters.module to maintain Views 2.x support
+      */
+-    
++
+     // Shorthand for all filters in this view
+     $filters = $form_state['view']->display_handler->handlers['filter'];
+-    
++
+     // Go through each saved option looking for Better Exposed Filter settings
+     foreach ($this->options['bef'] as $label => $options) {
+ 
+@@ -117,30 +204,30 @@ class better_exposed_filters_exposed_for
+       if (!$filters[$label]->options['exposed']) {
+         continue;
+       }
+-      
++
+       // Form element is designated by the element ID which is user-configurable
+       $field_id = $form['#info']["filter-$label"]['value'];
+ 
+       // Add a description to the exposed filter
+       if (!empty($options['more_options']['bef_filter_description'])) {
+         $form[$field_id]['#description'] = $options['more_options']['bef_filter_description'];
+-      } 
+-        
++      }
++
+       switch ($options['bef_format']) {
+         case 'bef':
+           if (empty($form[$field_id]['#multiple'])) {
+-            // For "force-single" select boxes or other single-select options, just switch to 
++            // For "force-single" select boxes or other single-select options, just switch to
+             // radio buttons.
+             $form[$field_id]['#type'] = 'radios';
+             $form[$field_id]['#process'] = array('expand_radios', 'views_process_dependency');
+-            $form[$field_id]['#prefix'] = '<div class="bef-select-as-radios">';
++            $form[$field_id]['#prefix'] = '<div class="bef-filter bef-select-as-radios">';
+             $form[$field_id]['#suffix'] = '</div>';
+ 
+             if (isset($form[$field_id]['#options']['All'])) {
+               // @TODO: The terms 'All' and 'Any' are customizable in Views
+               if (!$filters[$label]->options['expose']['optional']) {
+                 // Some third-party filter handlers still add the "Any" option even if this is not
+-                // an optional filter.  Zap it here if they do. 
++                // an optional filter.  Zap it here if they do.
+                 unset($form[$field_id]['#options']['All']);
+               }
+               else {
+@@ -161,14 +248,14 @@ class better_exposed_filters_exposed_for
+               if (!isset($form[$field_id]['#attributes'])) {
+                 $form[$field_id]['#attributes'] = array();
+               }
+-              
++
+               // If the 'class' index doesn't exist, PHP will throw a notice if the error_reporting
+-              // level includes E_NOTICE.  Suppress the notice with the '@' operator. 
++              // level includes E_NOTICE.  Suppress the notice with the '@' operator.
+               @$form[$field_id]['#attributes']['class'] .= 'bef-select-all-none';
+             }
+           }
+           break;
+-              
++
+         case 'bef_hidden':
+           $form['#info']["filter-$field_id"]['label'] = '';     // Hide the label
+           if (empty($form[$field_id]['#multiple'])) {
+@@ -178,8 +265,8 @@ class better_exposed_filters_exposed_for
+             $form[$field_id]['#theme'] = 'select_as_hidden';
+           }
+           break;
+-          
++
+       }     // switch ($options['bef_format'])
+     }       // foreach ($this->options['bef']...)
+   }         // function exposed_form_alter(...)
+-}
+\ No newline at end of file
++}
