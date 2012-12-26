@@ -1,7 +1,0 @@
-; $Id$                                                                                                                                      
-name = term url                                                                                               
-description = modify term ulr to view exposed filter
-package = en.fltrp.com                                                                                                                   
-project = 2u4u                                                                                                                              
-core = 7.x                                                                                                                                  
-php = 5.0   
