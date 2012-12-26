@@ -1,5 +1,0 @@
-name = 区块更多链接
-description = 为所有的区块提供了一个更多的链接
-core = 7.x
-dependenices[] = block
-configure = admin/config/block/morelink
