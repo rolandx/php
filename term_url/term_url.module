@@ -1,6 +1,4 @@
-
-
-
+<?php
 function taxonomy_redirect_custom_term_path($term, $path) {
   if ($term is of the 'Country' vocabulary) {
     if (browsing the 'articles' view) {

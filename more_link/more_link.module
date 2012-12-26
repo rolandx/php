@@ -1,5 +1,4 @@
-
-
+<?php
 function block_more_link_form_block_admin_configure_alter(&$form,&$form_state){
     $default_more_link_url = '';
     $default_more_link_title = '';
@@ -25,3 +24,5 @@ function block_more_link_form_block_admin_configure_alter(&$form,&$form_state){
     $form['#submit'][] = 'block_more_link_block_admin_configure_submit';
 
 }
+
+?>
